@@ -9,7 +9,6 @@ import threading
 producto. 
 ●  Ejecutar varias veces la aplicación y comprobar si aparecen resultados inconsistentes. 
 ●  Identificar la sección crítica y documentarla en el README.
-
 '''
 
 
@@ -25,10 +24,24 @@ def vender(num_caja):
     while prox_pedido < len(estanteria):
         detalle_pedido = D.PEDIDOS[prox_pedido]
         prox_pedido += 1
+        pedido, producto, cantidad = detalle_pedido # Desglosamos lo que tenememos en detalles pedidos
+        stock =  estanteria[1]  # Unidades disponibles
 
-        # Desglosamos lo que tenememos en detalles pedidos
+        if stock > cantidad:
+            estanteria[producto] -= cantidad # Le restamos la cantidad
+            print(f"Pedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[0]}")
+        
+            
 
 
 
 
-# pedidos = [threading.Thread(target=stock_disponible, args=) for _ in range(D.NUM_CAJAS)] # 
+
+
+
+
+
+
+
+
+# pedidos = [threading.Thread(target=stock_disponible, args=) for _ in range(D.NUM_CAJAS)]   
