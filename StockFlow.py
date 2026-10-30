@@ -44,19 +44,3 @@ if __name__ == "__main__":
 
     for z in paquete_hilos:
         z.join()
-        
-        
-            
-
-
-
-
-
-
-
-
-
-
-
-
-# pedidos = [threading.Thread(target=stock_disponible, args=) for _ in range(D.NUM_CAJAS)]   
