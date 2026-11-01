@@ -17,16 +17,15 @@ def vender(num_caja):
         detalle_pedido = D.PEDIDOS[prox_pedido]
         prox_pedido += 1
         pedido, producto, cantidad = detalle_pedido # Desglosamos lo que tenememos en detalles pedidos
-        with cerradura: # dentro de la cerradura solo puede haber
+        with cerradura: # Protegemos el descuento de stock dentro de la cerradura solo puede haber uno
             stock =  estanteria[producto]  # Unidades disponibles
-            # Protegemos el descuento de stock
-            if stock > cantidad:
+            if stock >= cantidad:                
                 estanteria[producto] -= cantidad # Le restamos la cantidad
-                print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[producto]}")
+                vendido = True # Bandera de confirmación para los pedidos
             else:
-                print(f"No hay suficientes unidades d")
-
-
+                vendido = False
+        print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[producto]}") if vendido else print(f"No hay suficientes unidades d")
+            
 if __name__ == "__main__":
     paquete_hilos = []
 
