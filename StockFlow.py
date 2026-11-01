@@ -1,22 +1,27 @@
 import datos as D
 import threading
+import time
 '''
-●  Corregir la condición de carrera utilizando Lock. 
-●  Proteger conjuntamente la comprobación del stock y el descuento de unidades. 
-●  Mantener fuera de la sección crítica todo el código que no necesite protección. 
-●  Comprobar que el stock no puede quedar en valores incoherentes.
+●  Utilizar NUM_TERMINALES como número máximo de cajas que pueden utilizar simultáneamente un terminal de cobro. 
+●  Implementar esta limitación mediante Semaphore. 
+●  Mostrar cuándo una caja obtiene y libera un terminal. 
+●  Mantener Lock para proteger el inventario: Semaphore y Lock deben resolver problemas distintos. 
 '''
 estanteria = dict(D.STOCK_INICIAL) 
 # Creamos una cerradura
 cerradura = threading.Lock()
 
+# Limitamos las cajas que se pueden cobrar
+terminales = threading.Semaphore(D.NUM_TERMINALES)
+
+
 def vender(num_caja):
-    global estanteria
-    prox_pedido = 0
-    while prox_pedido < len(estanteria):
+
+    
+    for prox_pedido in range(num_caja-1, len(D.PEDIDOS), D.NUM_CAJAS): 
         detalle_pedido = D.PEDIDOS[prox_pedido]
-        prox_pedido += 1
         pedido, producto, cantidad = detalle_pedido # Desglosamos lo que tenememos en detalles pedidos
+        
         with cerradura: # Protegemos el descuento de stock dentro de la cerradura solo puede haber uno
             stock =  estanteria[producto]  # Unidades disponibles
             if stock >= cantidad:                
@@ -24,7 +29,15 @@ def vender(num_caja):
                 vendido = True # Bandera de confirmación para los pedidos
             else:
                 vendido = False
-        print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[producto]}") if vendido else print(f"No hay suficientes unidades d")
+        if vendido:
+            print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[producto]}\n")
+
+            with terminales:
+                print(f"La caja {num_caja} ha obtenido una terminal de cobro.\n")
+                time.sleep(2)
+                print(f"La caja {num_caja} ya ha terminado y ha liberado la terminal de cobro.\n")
+        else: 
+            print(f"No hay suficientes unidades de {producto}")
             
 if __name__ == "__main__":
     paquete_hilos = []
