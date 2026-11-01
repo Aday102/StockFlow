@@ -11,3 +11,8 @@
 - Condition → Sirve para que un hilo se quede esperando a que se cumpla algo sin gastar CPU.
 
 - Barrier → Sincroniza los hilos por fases, si todos los hilos tienen que terminar en la fase 1, se esperan y una vez estén todos terminados empiezan juntos la fase 2.
+## Sección critica del programa
+La sección critica del programa sucede cuando 2 hilos están accediendo a un mismo recurso compartido y que no deberia estar siendo ejecutado por varios hilos al mismo tiempo.
+
+
+
