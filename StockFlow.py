@@ -2,92 +2,122 @@ import datos as D
 import threading
 import time
 '''
-●  Crear NUM_REVISORES hilos de revisión. 
-●  Repartir entre ellos la comprobación final del catálogo. 
-●  Utilizar Barrier para impedir que continúe el cierre hasta que todos hayan terminado su revisión. 
-●  Mostrar el resumen final solo después de superar la barrera.
+●  Organizar la gestión del inventario en una clase. 
+●  Diseñar al menos una operación protegida que invoque otra operación protegida del mismo gestor. 
+●  Sustituir el mecanismo adecuado por RLock para permitir la reentrada del mismo hilo. 
+●  Explicar en el README por qué RLock es necesario en ese diseño.
 '''
-estanteria = dict(D.STOCK_INICIAL) 
-# Creamos una cerradura
-cerradura = threading.Lock()
 
-# Limitamos las cajas que se pueden cobrar
+class GestorInventario:
+    def __init__(self, stock_inicial):
+
+        self.estanteria = dict(stock_inicial) 
+        # Creamos una cerradura
+        self.cerradura = threading.Lock()
+
+        # Limitamos las cajas que se pueden cobrar
+        self.terminales = threading.Semaphore(D.NUM_TERMINALES)
+
+        # Creamos una condicion utilizando la misma cerradura del inventario.
+        self.condicion = threading.Condition(self.cerradura)
+
+        # Indicamos si el almacen ha terminado las reposiciones
+        self.reposiciones_terminadas = False
+
+        # La barrera la tienen que cruzar los revisores más el hilo principal
+        self.barrera = threading.Barrier(D.NUM_REVISORES + 1)
+
+        # Resultados de las revisiones
+        self.productos_agotados = []
+        self.productos_negativos = []
+
+    # ======= Operaciones =======
+    def consultar_stock(self, producto):
+        with self.cerradura:
+            return self.estanteria.get(producto, 0)
+
+    def stock_activo(self, producto, cantidad):
+        with self.cerradura:
+            return self.consultar_stock(producto) >= cantidad
+
+    def retirar_stock(self, num_caja, producto, cantidad):
+        with self.condicion:
+            while not self.stock_activo(producto, cantidad) and not self.reposiciones_terminadas:
+                print(f"La caja {num_caja} se encuentra esperando la reposicion de {producto}.\n")
+                self.condicion.wait()
+
+            # Volvemos a comprobar el stock
+            if self.stock_activo(producto, cantidad):
+                self.estanteria[producto] -= cantidad
+                return True, self.consultar_stock(producto) # Actualizamos el inventario restante y lo mostramos
+            return False, self.consultar_stock(producto)
+
+    def reponer_stock(self, producto, cantidad):
+        with self.condicion:
+            self.estanteria[producto] = self.consultar_stock(producto) + cantidad
+            self.condicion.notify_all() # Comunicamos que las cajas están esperando
+            return self.consultar_stock(producto)
+
+    def terminar_reposiciones(self):
+        with self.condicion:
+            self.reposiciones_terminadas = True
+            self.condicion.notify_all()
+
+    def obtener_catalogo(self):
+        with self.cerradura:
+            return list(self.estanteria.items()) # Hacemos una copua en una lista para repartir posiciones.
+
+
+    def registrar_revision(self, producto):
+        with self.cerradura:
+            stock = self.consultar_stock(producto)
+            if stock < 0:
+                self.productos_negativos.append(producto)
+            elif stock == 0:
+                self.productos_agotados.append(producto)
+            return stock
+
+# Creamos el objeto del gesto y todo lo necesario pa su funcionamiento
+gestor = GestorInventario(D.STOCK_INICIAL)
 terminales = threading.Semaphore(D.NUM_TERMINALES)
+barrera = threading.Barrier(D.NUM_REVISORES+1)
 
-# Creamos una condicion utilizando la misma cerradura del inventario.
-condicion = threading.Condition(cerradura)
 
-# Indicamos si el almacen ha terminado las reposiciones
-reposiciones_terminadas = False
-
-# La barrera la tienen que cruzar los revisores más el hilo principal
-barrera = threading.Barrier(D.NUM_REVISORES + 1)
-
-# Resultados de las revisiones
-productos_agotados = []
-productos_negativos = []
 
 
 def vender(num_caja):
     for prox_pedido in range(num_caja-1, len(D.PEDIDOS), D.NUM_CAJAS): 
-        detalle_pedido = D.PEDIDOS[prox_pedido]
-        pedido, producto, cantidad = detalle_pedido # Desglosamos lo que tenememos en detalles pedidos
-        
-        with condicion: # Protegemos el acceso al inventario canbiamdo 'cerradura' por 'condicion'
-            
-            # Esperammos mientras no haya stock y queden reposiciones
-            while estanteria.get(producto, 0) < cantidad and not reposiciones_terminadas:
-                print(f"La caja {num_caja} se encuentra esperando reposición de {producto}.")
-                condicion.wait() # Hace que la caja se duerma mientras se libera el Lock y esperamos a una notificación
+        pedido, producto, cantidad =  D.PEDIDOS[prox_pedido]# Desglosamos lo que tenememos en detalles pedidos
+        vendido, inventario_restante = gestor.retirar_stock(num_caja, producto, cantidad)
 
-            if estanteria.get(producto, 0) >= cantidad:
-                estanteria[producto] -= cantidad # Le restamos la cantidad
-                vendido = True # Bandera de confirmación para los pedidos
-            else:
-                vendido = False
         if vendido:
-            print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {estanteria[producto]}\n")
-
+            print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {inventario_restante}\n")
             with terminales:
                 print(f"La caja {num_caja} ha obtenido una terminal de cobro.\n")
                 time.sleep(2)
-                print(f"La caja {num_caja} ya ha terminado y ha liberado la terminal de cobro.\n")
-        else: 
-            print(f"No hay suficientes unidades de {producto}")
-
+                print(f"La caja {num_caja} ya ha terminado y ha liberado la terminal.\n")
+        else:
+            print(f"Caja {num_caja}: pedido {pedido} rechazado. No hay suficientes unidades de {producto}.\n")
 def reponer():
     global reposiciones_terminadas
 
     try:
         for identificacion, producto, cantidad in D.REPOSICIONES:
             time.sleep(1) # Tiempo de preparacion
-            with condicion:
-                # Añadimos las unidades al inventario
-                estanteria[producto] = estanteria.get(producto, 0) + cantidad
-                stock_actualizado = estanteria[producto]
-                condicion.notify_all() # Mandamos la notificion a las cajas que están esperando
+            stock_actualizado= gestor.reponer_stock(producto, cantidad)
             print(f"Almacen: Reposicion de {cantidad} unidades de {producto}.\nStock actual --> {stock_actualizado}.\n")
-
+          
     finally:
-        # Avisamos cuando no queden más reposiciones
-        with condicion:
-            reposiciones_terminadas = True
-            condicion.notify_all()
-
-
+        # Avisamos al gestor que no quedan más reposiciones
+        gestor.terminar_reposiciones()
 def revisar(num_revisor):
-    catalogo = list(estanteria.items()) # Convertimos el inventario a listas pa poder trabajar con las posiciones
+    catalogo = gestor.obtener_catalogo()
 
     # Usamos el mismo reparto que el de las cajas
     for prox_producto in range(num_revisor-1, len(catalogo), D.NUM_REVISORES):
-        producto, stock = catalogo[prox_producto]
+        producto, _ = catalogo[prox_producto]
+        stock = gestor.registrar_revision(producto)
         print(f"Revisor {num_revisor} comprobando el producto: {producto} --> {stock} unidades.\n")
-
-        with cerradura:
-            if stock < 0:
-                productos_negativos.append(producto)
-            elif stock == 0:
-                productos_agotados.append(producto)
     print(f"El revisor {num_revisor} ha terminado y esta esperando en la barrera.\n")
     barrera.wait() # Le indicamos que se quede aqui hasta que llegan todos los demás.
 
@@ -125,8 +155,9 @@ if __name__ == "__main__":
 
     # Solo llegamos aqui cuando se supera la barrera
     print("\n===== RESUMEN =====\n"
-          f"INVENTARIO FINAL --> {estanteria}\n"
-          f"Productos agotados --> {productos_agotados if productos_agotados else 'Ninguno'}"
-          f"Producto en negativos --> {productos_negativos if productos_negativos else 'Ninguno'}")
-
-    assert not productos_negativos # Verificamos que no hay productos en negativo dentro del inventario
+          f"INVENTARIO FINAL --> {gestor.estanteria}\n"
+          f"Productos agotados --> {gestor.productos_agotados if gestor.productos_agotados else 'Ninguno'}"
+          f"Producto en negativos --> {gestor.productos_negativos if gestor.productos_negativos else 'Ninguno'}")
+    for revisor in paquete_revisados:
+        revisor.join()
+    assert not gestor.productos_negativos # Verificamos que no hay productos en negativo dentro del inventario
