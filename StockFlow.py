@@ -2,11 +2,10 @@ import datos as D
 import threading
 import time
 '''
-●  Crear uno o varios hilos de almacén que procesen REPOSICIONES. 
-●  Cuando una caja no tenga stock suficiente, deberá esperar utilizando Condition. 
-●  No se permite comprobar continuamente el stock mediante un bucle de espera activa. 
-●  Cuando se procese una reposición, deberán notificarse los cambios a los hilos que estén esperando. 
-●  Al despertar, cada caja deberá volver a comprobar si existe stock suficiente.
+●  Crear NUM_REVISORES hilos de revisión. 
+●  Repartir entre ellos la comprobación final del catálogo. 
+●  Utilizar Barrier para impedir que continúe el cierre hasta que todos hayan terminado su revisión. 
+●  Mostrar el resumen final solo después de superar la barrera.
 '''
 estanteria = dict(D.STOCK_INICIAL) 
 # Creamos una cerradura
@@ -21,9 +20,7 @@ condicion = threading.Condition(cerradura)
 # Indicamos si el almacen ha terminado las reposiciones
 reposiciones_terminadas = False
 
-def vender(num_caja):
-
-    
+def vender(num_caja):    
     for prox_pedido in range(num_caja-1, len(D.PEDIDOS), D.NUM_CAJAS): 
         detalle_pedido = D.PEDIDOS[prox_pedido]
         pedido, producto, cantidad = detalle_pedido # Desglosamos lo que tenememos en detalles pedidos
@@ -35,7 +32,7 @@ def vender(num_caja):
                 print(f"La caja {num_caja} se encuentra esperando reposición de {producto}.")
                 condicion.wait() # Hace que la caja se duerma mientras se libera el Lock y esperamos a una notificación
 
-            if estanteria.ger(producto, 0) >= cantidad:
+            if estanteria.get(producto, 0) >= cantidad:
                 estanteria[producto] -= cantidad # Le restamos la cantidad
                 vendido = True # Bandera de confirmación para los pedidos
             else:
@@ -87,7 +84,7 @@ if __name__ == "__main__":
         paquete_hilos.append(hilos)
 
     # Creamos el hilo de almacen
-    hilo_almacen = threading.Thread(target=vender, args=(y +1,))
+    hilo_almacen = threading.Thread(target=reponer)
 
     for i in paquete_hilos:
         i.start() #Iniciamos todos los hilos
