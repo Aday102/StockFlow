@@ -34,3 +34,20 @@ La sección critica del programa sucede cuando 2 hilos están accediendo a un mi
 La gestión del inventario esta dentro del inventario de la clase y todas sus operaciones estan protegidas con la misma cerradura. Algunas de esas operaciones, llaman a otras del mismo gestor, lo que significa que con un lock normal se hubiera provocado un interbloqueo, es decir el hilo ya cuenta con una cerradura y al intentar cogerla de nueva, se queda esperando a que se libere, cuando en realidad se tiene que liberar el mismo.
 
 Por eso Rlock es necesario, este recuerda que hilos tiene ya la cerrradura y cuantas veces la ha cogido.
+
+
+## Prevencion Deadlock y prevención
+### Problema → Cajas esperando una reposicion que nunca llega
+#### Situación
+Cuando una caja no tiene suficiente stock, se queda dormida con 'condition.wait()' que colocamos dentro del metodo 'retirar_stock()' que definimos dentro de la clase. Y solo se despierta en caso de que se llame al 'notify_all()'.
+
+#### Problema
+El problema aparece si el hilo de almacén nunca se llegará a avisar, en ese caso se rompería el programa lanzado una excepción
+a mitad de las reposiciones, o porque se terminan todas las reposiciones y las cajas siguen esperando un producto que nunca se va a reponer.
+ 
+####  Prevención 
+- **Colocación de banderas** → En el gestor colocamos un atributo que definí como 'reposiciones_terminadas' que utilicé como bandera y coloque en la condicion del bucle while para asegurarme un mejor resultado. 
+
+- **Aviso final garantizado con el finally** → En la función 'reponer()' llama al metodo de la clase 'finalizar_reposiciones()' dentro de un bloque finally, asi aseguramos que aunque el almacén termine o lance una excepción se marque siempre 'reposiciones_terminadas = True' y haga 'condicion.wait()' y que ninguna caja se quede dormida.
+
+- **Segunda comprobación** → Cuando una caja despierta, vuelve a mirar el stock, porque otra caja puede haberse llevado las unidades antes. Si ya no quedan reposiciones y sigue sin haber stock, el pedido se rechaza en lugar de quedarse esperando.
