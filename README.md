@@ -31,4 +31,6 @@ La sección critica del programa sucede cuando 2 hilos están accediendo a un mi
 
 
 ## ¿Por que RLock es necesario en la fase 6?(Refactorización con RLock)
-Era nec
+La gestión del inventario esta dentro del inventario de la clase y todas sus operaciones estan protegidas con la misma cerradura. Algunas de esas operaciones, llaman a otras del mismo gestor, lo que significa que con un lock normal se hubiera provocado un interbloqueo, es decir el hilo ya cuenta con una cerradura y al intentar cogerla de nueva, se queda esperando a que se libere, cuando en realidad se tiene que liberar el mismo.
+
+Por eso Rlock es necesario, este recuerda que hilos tiene ya la cerrradura y cuantas veces la ha cogido.
