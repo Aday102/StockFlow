@@ -1,4 +1,21 @@
 # StockFlow
+## Descripción general del proyecto
+El proyecto que hemos desarrollado se realizaba mediante hilos, el objetivo a cumplir de este proyecto era ser capaces de comprender y detectar los distintos problemas que nos pueden ocasionar los hilos(condicion de carrera, sección crítica) y a como ser capaces de preverlos para poder remediarlos con los metodos de la librería(Lock, RLock, Semaphore, Condition, Barrier).
+
+El proyecto estaba contextualizado en la simulacion de una tienda en la que varias cajas procesan pedidos al mismo tiempo.
+
+## Estructura
+```
+C:.
+└───StockFlow
+        .gitignore
+        datos.py
+        practica_stockflow_actualizada.pdf
+        README.md
+        StockFlow.py
+```
+## Sección critica del programa
+La sección critica del programa sucede cuando 2 hilos están accediendo a un mismo recurso compartido y que no deberia estar siendo ejecutado por varios hilos al mismo tiempo.
 
 ## Uso y finalidad del Lock, RLock, Semaphore, Condition y Barrier
 
@@ -11,11 +28,27 @@
 - Condition → Sirve para que un hilo se quede esperando a que se cumpla algo sin gastar CPU.
 
 - Barrier → Sincroniza los hilos por fases, si todos los hilos tienen que terminar en la fase 1, se esperan y una vez estén todos terminados empiezan juntos la fase 2.
-## Sección critica del programa
-La sección critica del programa sucede cuando 2 hilos están accediendo a un mismo recurso compartido y que no deberia estar siendo ejecutado por varios hilos al mismo tiempo.
 
 
-## FASE 6: ¿Por que es necesario LRock() en este diseño?
-La gestión del inventario esta dentro del  inventario de la clase y todas sus operaciones estan protegidas con la misma cerradura. Algunas de esas operaciones, llaman a otras del mismo gestor, lo que significa que con un lock normal se hubiera provocado un interbloqueo, es decir el hilo ya cuenta con una cerradura y al intentar cogerla de nueva, se queda esperando a que se libere, cuando en realidad se tiene que liberar el mismo. 
+
+## ¿Por que RLock es necesario en la fase 6?(Refactorización con RLock)
+La gestión del inventario esta dentro del inventario de la clase y todas sus operaciones estan protegidas con la misma cerradura. Algunas de esas operaciones, llaman a otras del mismo gestor, lo que significa que con un lock normal se hubiera provocado un interbloqueo, es decir el hilo ya cuenta con una cerradura y al intentar cogerla de nueva, se queda esperando a que se libere, cuando en realidad se tiene que liberar el mismo.
 
 Por eso Rlock es necesario, este recuerda que hilos tiene ya la cerrradura y cuantas veces la ha cogido.
+
+
+## Prevencion Deadlock y prevención
+### Problema → Cajas esperando una reposicion que nunca llega
+#### Situación
+Cuando una caja no tiene suficiente stock, se queda dormida con 'condition.wait()' que colocamos dentro del metodo 'retirar_stock()' que definimos dentro de la clase. Y solo se despierta en caso de que se llame al 'notify_all()'.
+
+#### Problema
+El problema aparece si el hilo de almacén nunca se llegará a avisar, en ese caso se rompería el programa lanzado una excepción
+a mitad de las reposiciones, o porque se terminan todas las reposiciones y las cajas siguen esperando un producto que nunca se va a reponer.
+ 
+####  Prevención 
+- **Colocación de banderas** → En el gestor colocamos un atributo que definí como 'reposiciones_terminadas' que utilicé como bandera y coloque en la condicion del bucle while para asegurarme un mejor resultado. 
+
+- **Aviso final garantizado con el finally** → En la función 'reponer()' llama al metodo de la clase 'finalizar_reposiciones()' dentro de un bloque finally, asi aseguramos que aunque el almacén termine o lance una excepción se marque siempre 'reposiciones_terminadas = True' y haga 'condicion.wait()' y que ninguna caja se quede dormida.
+
+- **Segunda comprobación** → Cuando una caja despierta, vuelve a mirar el stock, porque otra caja puede haberse llevado las unidades antes. Si ya no quedan reposiciones y sigue sin haber stock, el pedido se rechaza en lugar de quedarse esperando.
