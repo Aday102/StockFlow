@@ -1,4 +1,5 @@
 # ===== IMPORTACIONES =====
+
 import datos as D
 import threading
 import time
@@ -35,7 +36,15 @@ class GestorInventario:
         self.contador_pedidos_vendidos = 0
         self.contador_pedidos_rechazados = 0
 
+        self.evento = threading.Event() # Desactivada
+        self.evento.set() # Permitimos que este trabajando
 
+
+        self.estado = "antes"
+        # Grupo excluyentes
+        self.Antes_pausa = [] # pedidos iniciados y finalizados antes de que suceda la pausa 
+        self.En_curso = []  # Pedidos iniciado antes de la solicitud pero finalizados despues.
+        self.reanudacion = [] # Pedidos cuyo inicio sucedio despues de la pausa
 
 
     # ===== CONSULTA Y COMPROBACIÓN DE STOCK =====
@@ -50,13 +59,14 @@ class GestorInventario:
 
 
     # ===== VENTA Y CONTROL DEL TIEMPO DE ESPERA =====
-
-    def retirar_stock(self, num_caja, producto, cantidad):
+    def retirar_stock(self, num_caja, producto, cantidad, pedido):
         # Parametros del control del tiempo de espera
         inicio = time.monotonic()
         tiempo_max = 5
 
+        self.evento.wait()# Al inicio esta la señal activa.
         with self.condicion:
+            
             # ------------------ SECCION CRITICA ------------------
             while not self.stock_activo(producto, cantidad) and not self.reposiciones_terminadas:
                 # Conttrol del tiempo
@@ -73,12 +83,16 @@ class GestorInventario:
 
             # Volvemos a comprobar el stock
             if self.stock_activo(producto, cantidad):
+
+                if self.estado == "antes": self.Antes_pausa.append(pedido);
+                if self.estado == "durante": self.En_curso.append(pedido);
+                if self.estado == "finalizado": self.reanudacion.append(pedido);
+
                 # La venta se puede realizar
                 self.estanteria[producto] -= cantidad
-                self.sumarPedidosVendidos()
+
                 return True, self.consultar_stock(producto) # Actualizamos el inventario restante y lo mostramos
-            # Si se rechaza porque no se puede realizar la venta
-            self.sumarPedidoRechazado()
+
             return False, self.consultar_stock(producto)
 
 
@@ -98,7 +112,6 @@ class GestorInventario:
 
 
     # ===== CATÁLOGO Y REVISIÓN DE INVENTARIO =====
-
     def obtener_catalogo(self):
         with self.cerradura:
             return list(self.estanteria.items()) # Hacemos una copua en una lista para repartir posiciones.
@@ -115,31 +128,6 @@ class GestorInventario:
             return stock
     
 
-    # ===== RECUENTO TOTAL DE UNIDADES =====
-
-    def unidades_totales(self) -> int:
-        conteo = 0
-        with self.cerradura:
-            for producto, cantidad in self.estanteria.items():
-                conteo += cantidad
-            return conteo    
-
-    # ===== ESTADÍSTICAS DE VENTAS =====
-
-    def estadisticas_ventas(self):
-        pedidos_procesados = self.contador_pedidos_vendidos + self.contador_pedidos_rechazados
-        return self.contador_pedidos_vendidos, self.contador_pedidos_rechazados, pedidos_procesados
-
-    def sumarPedidoRechazado(self):
-        with self.cerradura:
-            self.contador_pedidos_rechazados += 1
-
-    def sumarPedidosVendidos(self):
-        with self.cerradura:
-            self.contador_pedidos_vendidos += 1
-
-
-
         
 
 # ===== INICIALIZACIÓN DEL GESTOR Y RECURSOS COMPARTIDOS =====
@@ -150,15 +138,13 @@ terminales = threading.Semaphore(D.NUM_TERMINALES)
 barrera = threading.Barrier(D.NUM_REVISORES+1) # 5 hilos en total.
 
 
-
-
-
 # ===== HILO DE CAJA: VENTAS Y COBROS =====
 
-def vender(num_caja):
+def vender(num_caja, ):
     for prox_pedido in range(num_caja-1, len(D.PEDIDOS), D.NUM_CAJAS): 
         pedido, producto, cantidad =  D.PEDIDOS[prox_pedido]# Desglosamos lo que tenememos en detalles pedidos
-        vendido, inventario_restante = gestor.retirar_stock(num_caja, producto, cantidad)
+        vendido, inventario_restante = gestor.retirar_stock(num_caja, producto, cantidad, pedido)
+            
 
         if vendido:
             print(f"Numero de cajas --> {num_caja}\nPedido --> {pedido}\nProducto --> {producto}\nCantidad del pedido --> {cantidad}\nInventario restante --> {inventario_restante}\n")
@@ -172,8 +158,8 @@ def vender(num_caja):
             print(f"Caja {num_caja}: pedido {pedido} rechazado. No hay suficientes unidades de {producto}.\n")
 
 # ===== HILO DE ALMACÉN: REPOSICIONES =====
-
 def reponer():
+
 
     try:
         for identificacion, producto, cantidad in D.REPOSICIONES:
@@ -186,7 +172,6 @@ def reponer():
         gestor.terminar_reposiciones()
 
 # ===== HILO DE REVISIÓN: CONTROL DE INVENTARIO =====
-
 def revisar(num_revisor):
     catalogo = gestor.obtener_catalogo()
 
@@ -198,16 +183,20 @@ def revisar(num_revisor):
     print(f"El revisor {num_revisor} ha terminado y esta esperando en la barrera.\n")
     barrera.wait() # Le indicamos que se quede aqui hasta que llegan todos los demás.
 
+def controlador():
+    time.sleep(3)
+    gestor.evento.clear()
+    gestor.estado = "durante"
+    time.sleep(4)
+    gestor.evento.set()
+    gestor.estado = "finalizado"
 
 
 # ===== PROGRAMA PRINCIPAL =====
-
 if __name__ == "__main__":
 
     # ===== CREACIÓN DE HILOS DE CAJA Y ALMACÉN =====
-
     paquete_hilos = []
-
     for y in range(D.NUM_CAJAS):
         # Definimos el hilo
         hilos = threading.Thread(target=vender, args=(y+1,))
@@ -215,15 +204,19 @@ if __name__ == "__main__":
 
     # Creamos el hilo de almacen
     hilo_almacen = threading.Thread(target=reponer)
-
+    # A partir de aqui se definen los hilos y por lo tanto ponemos la primera cuenta atrás
+    hilo_controlador = threading.Thread(target=controlador)
 
     # ===== INICIO DE HILOS DE VENTA Y REPOSICIÓN =====
-
     for i in paquete_hilos:
         i.start() #Iniciamos todos los hilos
    
     hilo_almacen.start() # Iniciamos el almacen
+    hilo_controlador.start()
 
+
+    
+    
 
     # ===== ESPERA A LA FINALIZACIÓN DE VENTAS Y REPOSICIONES =====
 
@@ -255,17 +248,11 @@ if __name__ == "__main__":
     print("\n===== RESUMEN =====\n"
           f"INVENTARIO FINAL --> {gestor.estanteria}\n"
           f"Productos agotados --> {gestor.productos_agotados if gestor.productos_agotados else 'Ninguno'}\n"
-          f"Producto en negativos --> {gestor.productos_negativos if gestor.productos_negativos else 'Ninguno'}\n"
-          f"TOTAL DE UNIDADES EN EL ALMACEN --> {gestor.unidades_totales()}") # Modificacion
-
-    # ===== RESUMEN DE ESTADÍSTICAS DE VENTAS =====
-
-    # Modificación 
-    # Estadisticas de ventas
-    vendidos, rechazados, total = gestor.estadisticas_ventas()
-    print(f"\n======== ESTADISTICAS DE VENTAS ========\n"f"Pedidos vendidos --> {vendidos}\n"f"Pedidos rechazados --> {rechazados}\n"f"Total de pedidos procesados --> {total}\n")
+          f"Producto en negativos --> {gestor.productos_negativos if gestor.productos_negativos else 'Ninguno'}\n") # Modificacion
 
 
+    # ############# RESUMEN ###########
+    print(f"pedidos despues de finalizar la pausa --> {gestor.reanudacion}\nPedidos antes de la pausa -> {gestor.Antes_pausa}\n Pedidos durante la pausa --> {gestor.En_curso}")
 
     # ===== CIERRE DE HILOS Y VALIDACIÓN FINAL =====
 
