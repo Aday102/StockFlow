@@ -1,5 +1,4 @@
 # ===== IMPORTACIONES =====
-
 import datos as D
 import threading
 import time
